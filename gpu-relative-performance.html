@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU Relative Performance</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ec; --muted:#9aa3b2;
+    --nvidia:#76b900; --amd:#ed1c24; --intel:#2f8fe6; --other:#8a93a3;
+    --accent:#f5a623;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+  .controls{
+    display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px;margin-bottom:16px;position:sticky;top:0;z-index:5;
+  }
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  input[type=text]{
+    background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:9px 11px;font-size:14px;outline:none;min-width:220px;
+  }
+  input:focus{border-color:var(--accent)}
+
+  /* vendor segmented control */
+  .seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{background:transparent;border:0;color:var(--muted);padding:9px 12px;font-size:13px;cursor:pointer;
+    border-left:1px solid var(--line)}
+  .seg button:first-child{border-left:0}
+  .seg button:hover{color:var(--text);background:rgba(255,255,255,.04)}
+  .seg button.on{background:var(--accent);color:#161616;font-weight:600}
+
+  /* performance range */
+  .range{display:flex;align-items:center;gap:8px}
+  .range input[type=number]{
+    width:78px;min-width:0;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:9px 10px;font-size:14px;outline:none;
+  }
+  .range input[type=number]:focus{border-color:var(--accent)}
+  .range span{color:var(--muted)}
+  .reset{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:8px;
+    padding:9px 12px;font-size:13px;cursor:pointer}
+  .reset:hover{color:var(--text);border-color:var(--muted)}
+
+  .count{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* custom autocomplete combobox */
+  .combo{position:relative;min-width:260px}
+  .combo input{width:100%;padding-right:32px}
+  .combo-caret{position:absolute;right:11px;top:50%;transform:translateY(-50%);
+    color:var(--muted);pointer-events:none;font-size:12px;transition:transform .15s}
+  .combo.open .combo-caret{transform:translateY(-50%) rotate(180deg)}
+  .combo-panel{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:30;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    max-height:320px;overflow-y:auto;box-shadow:0 14px 34px rgba(0,0,0,.55);padding:4px}
+  .combo-panel[hidden]{display:none}
+  .combo-opt{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;
+    cursor:pointer;font-size:14px;white-space:nowrap}
+  .combo-opt .cdot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .combo-opt .cname{overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+  .combo-opt .cname mark{background:rgba(245,166,35,.35);color:inherit;border-radius:2px}
+  .combo-opt .cval{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .combo-opt:hover,.combo-opt.hl{background:rgba(245,166,35,.16)}
+  .combo-opt.sel .cname{color:var(--accent);font-weight:600}
+  .combo-empty{padding:14px;color:var(--muted);font-size:13px;text-align:center}
+  .baseline-note{color:var(--muted);font-size:13px;margin-left:auto;align-self:center}
+  .baseline-note b{color:var(--accent)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:0 2px 12px}
+  .legend .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .head,.row{
+    display:grid;
+    grid-template-columns:34px minmax(140px,1.6fr) minmax(120px,3fr) 66px 62px;
+    gap:10px;align-items:center;
+  }
+  .head{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+    padding:6px 12px;border-bottom:1px solid var(--line)}
+  .head .r-pct,.head .r-mult{text-align:right}
+  .list{display:flex;flex-direction:column}
+  .row{
+    padding:8px 12px;border-bottom:1px solid var(--line);
+    text-decoration:none;color:inherit;cursor:pointer;
+  }
+  .row:hover{background:var(--panel)}
+  .row:hover .name{color:var(--accent)}
+  .row.active{background:linear-gradient(90deg,rgba(245,166,35,.14),transparent);
+    outline:1px solid rgba(245,166,35,.35);border-radius:8px}
+  .rank{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+  .name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .name .vtag{font-size:10px;color:var(--muted);font-weight:500;display:block;text-transform:uppercase;letter-spacing:.04em}
+  .bar{background:var(--panel2);border-radius:6px;height:20px;overflow:hidden;position:relative}
+  .bar>span{display:block;height:100%;border-radius:6px 0 0 6px;transition:width .35s ease}
+  .r-pct{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  .r-mult{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+  .row.active .r-pct{color:var(--accent)}
+  .empty{padding:30px;text-align:center;color:var(--muted)}
+  footer{margin-top:22px;color:var(--muted);font-size:12px;text-align:center}
+  @media (max-width:560px){
+    .head,.row{grid-template-columns:26px minmax(90px,1.4fr) minmax(60px,2fr) 52px 50px;gap:6px;font-size:13px}
+    select,input[type=text]{min-width:150px}
+    .baseline-note{margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GPU Relative Performance</h1>
+  <p class="sub">Data indeks TechPowerUp. Pilih GPU sebagai baseline (=100%) &mdash; semua kartu lain dihitung ulang relatif ke pilihanmu.</p>
+
+  <div class="controls">
+    <div class="field">
+      <label for="baselineInput">Baseline GPU (= 100%)</label>
+      <div class="combo" id="combo">
+        <input type="text" id="baselineInput" placeholder="Ketik untuk cari GPU…" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="comboPanel">
+        <span class="combo-caret" id="comboCaret">▾</span>
+        <div class="combo-panel" id="comboPanel" role="listbox" hidden></div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="search">Cari / filter nama</label>
+      <input type="text" id="search" placeholder="mis. 4090, radeon, arc…" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Vendor</label>
+      <div class="seg" id="vendorSeg">
+        <button type="button" data-v="all" class="on">Semua</button>
+        <button type="button" data-v="nvidia">NVIDIA</button>
+        <button type="button" data-v="amd">AMD</button>
+        <button type="button" data-v="intel">Intel</button>
+        <button type="button" data-v="other">Lainnya</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Rentang performa (%)</label>
+      <div class="range">
+        <input type="number" id="minPct" placeholder="min" min="0" inputmode="numeric">
+        <span>&ndash;</span>
+        <input type="number" id="maxPct" placeholder="max" min="0" inputmode="numeric">
+        <button type="button" class="reset" id="resetFilters" title="Reset semua filter">Reset</button>
+      </div>
+    </div>
+    <div class="baseline-note">Baseline: <b id="baselineName">&mdash;</b></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--nvidia)"></span>NVIDIA</span>
+    <span><span class="dot" style="background:var(--amd)"></span>AMD</span>
+    <span><span class="dot" style="background:var(--intel)"></span>Intel Arc</span>
+    <span><span class="dot" style="background:var(--other)"></span>Lainnya</span>
+    <span style="opacity:.8">· klik baris untuk buka di TechPowerUp ↗</span>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="head">
+    <div class="rank">#</div>
+    <div>GPU</div>
+    <div>Relative</div>
+    <div class="r-pct">%</div>
+    <div class="r-mult">×</div>
+  </div>
+  <div class="list" id="list"></div>
+
+  <footer>Sumber data: TechPowerUp GPU Database (relative performance index). Renormalisasi lokal di browser.</footer>
+</div>
+
+<script>
+// Indeks absolut: nilai = performa relatif dengan GTX 1660 SUPER = 100.
+// Renormalisasi ke baseline B: pct = round(val / valB * 100), mult = val / valB.
+const DATA = [
+  ["GeForce RTX 5090",731],["GeForce RTX 4090",557],["GeForce RTX 5080",482],
+  ["GeForce RTX 4080 SUPER",430],["GeForce RTX 4080",426],["Radeon RX 7900 XTX",426],
+  ["GeForce RTX 5070 Ti",420],["Radeon RX 9070 XT",401],["Radeon RX 7900 XT",367],
+  ["GeForce RTX 3090 Ti",360],["GeForce RTX 4070 Ti SUPER",360],["Radeon RX 9070",359],
+  ["GeForce RTX 4070 Ti",329],["GeForce RTX 5070",326],["GeForce RTX 3090",321],
+  ["GeForce RTX 3080 Ti",317],["GeForce RTX 4070 SUPER",307],["Radeon RX 7900 GRE",302],
+  ["Radeon RX 6950 XT",297],["GeForce RTX 4070",293],["Radeon RX 6900 XT",290],
+  ["GeForce RTX 3080",286],["Radeon RX 7800 XT",285],["Radeon RX 6800 XT",275],
+  ["GeForce RTX 5060 Ti 16 GB",255],["GeForce RTX 5060 Ti 8 GB",253],["Radeon RX 7700 XT",250],
+  ["Radeon RX 9060 XT 16 GB",242],["GeForce RTX 3070 Ti",242],["Radeon RX 6800",233],
+  ["Radeon RX 9060 XT 8 GB",228],["GeForce RTX 3070",226],["GeForce RTX 2080 Ti",224],
+  ["GeForce RTX 4060 Ti 8 GB",223],["GeForce RTX 5060",220],["Radeon RX 6750 XT",214],
+  ["GeForce RTX 3060 Ti",198],["Radeon RX 6700 XT",194],["GeForce RTX 2080 SUPER",181],
+  ["Radeon RX 7600 XT",179],["GeForce RTX 4060",178],["Arc B580",178],
+  ["GeForce RTX 5050",174],["GeForce RTX 2080",172],["Radeon RX 6650 XT",168],
+  ["Radeon RX 7600",168],["GeForce RTX 2070 SUPER",160],["GeForce GTX 1080 Ti",158],
+  ["Arc A770",158],["GeForce RTX 3060 12 GB",153],["Radeon RX 6600 XT",150],
+  ["Radeon VII",150],["Arc A750",147],["Steam Machine GPU",144],
+  ["Radeon RX 5700 XT",144],["GeForce RTX 2070",141],["Radeon RX 6600",135],
+  ["Arc A580",131],["GeForce RTX 2060 SUPER",131],["Radeon RX Vega 64",125],
+  ["GeForce RTX 2060",121],["Radeon RX 5700",121],["GeForce GTX 1080",119],
+  ["GeForce GTX 1070 Ti",116],["Radeon RX 5600 XT",115],["Radeon RX Vega 56",110],
+  ["GeForce GTX 1070",106],["GeForce GTX 1660 SUPER",100],["GeForce GTX 1660 Ti",100],
+  ["GeForce GTX 980 Ti",95],["GeForce RTX 3050 8 GB",94],["Radeon R9 FURY X",93],
+  ["GeForce GTX 1660",92],["Radeon RX 590",87],["Radeon R9 FURY",85],
+  ["GeForce GTX 980",84],["GeForce GTX 1650 SUPER",83],["Radeon RX 6500 XT",82],
+  ["Radeon RX 5500 XT",81],["Radeon RX 580",80],["GeForce GTX 1060 6 GB",78],
+  ["Radeon R9 390X",77],["GeForce GTX 690",76],["Radeon RX 480",76],
+  ["Radeon HD 7990",75],["GeForce GTX 780 Ti",74],["GeForce GTX 970",72],
+  ["Radeon R9 290X",72],["Radeon R9 390",71],["Radeon RX 570",70],
+  ["Radeon R9 290",66],["Radeon RX 470",65],["GeForce GTX 1650",62],
+  ["Radeon RX 6400",60],["Arc A380",59],["GeForce GTX 780",59],
+  ["Radeon HD 7970 GHz Edition",54],["GeForce GTX 590",54],["Radeon R9 280X",53],
+  ["Radeon HD 6990",52],["GeForce GTX 1050 Ti",49],["GeForce GTX 680",48],
+  ["Radeon R9 380",48],["Radeon HD 7970",48],["GeForce GTX 770",47],
+  ["Radeon R9 285",47],["GeForce GTX 960",46],["GeForce GTX 670",44],
+  ["Radeon HD 5970",40],["GeForce GTX 1630",40],["Radeon HD 7950",39],
+  ["GeForce GTX 1050",39],["GeForce GTX 760",39],["GeForce GTX 580",39],
+  ["GeForce GTX 660 Ti",39],["Radeon R9 270X",38],["Radeon HD 7870 GHz Edition",37],
+  ["GeForce GTX 950",37],["Radeon RX 560",35],["GeForce GTX 570",34],
+  ["GeForce GTX 660",34],["Radeon RX 460",34],["Radeon R7 370",34],
+  ["Radeon HD 6970",33],["GeForce GTX 480",32],["Radeon HD 7850",31],
+  ["GeForce GTX 295",30],["Radeon HD 6950",29],["GeForce GTX 750 Ti",29],
+  ["Radeon HD 4870 X2",29],["GeForce GTX 560 Ti",29],["Radeon HD 5870",28],
+  ["Radeon HD 6870",26],["GeForce GTX 470",25],["GeForce GTX 650 Ti",24],
+  ["Radeon HD 5850",24],["GeForce GTX 285",22],["Radeon HD 6850",22],
+  ["GeForce GTX 280",20],["Radeon HD 7770 GHz Edition",20],["GeForce GTX 275",20],
+  ["GeForce GT 1030",20],["GeForce GTX 460",20],["Radeon HD 4890",19],
+  ["Radeon HD 6790",18],["Radeon HD 5830",18],["GeForce GTX 650",17],
+  ["GeForce GTX 550 Ti",16],["Radeon HD 4870",16],["GeForce GTX 260",16],
+  ["Radeon HD 5770",16],["Radeon HD 7750",16],["Radeon HD 5750",14],
+  ["GeForce GTS 450",13],["GeForce GTS 250",13],["Radeon HD 4850",13],
+  ["Radeon HD 4770",12],["Radeon HD 4830",11],["Radeon HD 6670",11],
+  ["GeForce 9800 GT",10],["GeForce GT 640",10],["Radeon HD 5670",9],
+  ["GeForce 9600 GT",9],["GeForce GT 240",8],["GeForce GT 440",8],
+  ["Radeon HD 4670",7],["Radeon HD 5570",7],["GeForce GT 430",7],
+  ["GeForce GT 220",5],["GeForce GT 520",4],["Radeon HD 6450",4],
+  ["Radeon HD 5450",3],["Radeon HD 4550",3],["GeForce 9400 GT",2],
+  ["GeForce 210",2]
+];
+
+function vendorOf(name){
+  if(name.includes("Radeon")) return "amd";
+  if(name.includes("Arc")) return "intel";
+  if(name.includes("GeForce")) return "nvidia";
+  return "other";
+}
+const VCOLOR = {nvidia:"var(--nvidia)",amd:"var(--amd)",intel:"var(--intel)",other:"var(--other)"};
+const VLABEL = {nvidia:"NVIDIA",amd:"AMD",intel:"Intel Arc",other:"Lainnya"};
+
+const gpus = DATA.map((d,i)=>({name:d[0], val:d[1], vendor:vendorOf(d[0]), origIdx:i}));
+
+const $search = document.getElementById("search");
+const $list   = document.getElementById("list");
+const $bName  = document.getElementById("baselineName");
+
+// ---------- baseline autocomplete combobox ----------
+const $combo = document.getElementById("combo");
+const $input = document.getElementById("baselineInput");
+const $panel = document.getElementById("comboPanel");
+
+let baselineIdx = gpus.findIndex(g=>g.name==="GeForce GTX 1660 SUPER");
+let filtered = [];  // gpu indices currently rendered in panel
+let hlIdx = -1;     // highlighted position within `filtered`
+
+const escHtml = s => s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function highlightMatch(name,q){
+  if(!q) return escHtml(name);
+  const i = name.toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return escHtml(name);
+  return escHtml(name.slice(0,i))+'<mark>'+escHtml(name.slice(i,i+q.length))+'</mark>'+escHtml(name.slice(i+q.length));
+}
+
+function buildPanel(q){
+  filtered = gpus.map((_,i)=>i).filter(i => !q || gpus[i].name.toLowerCase().includes(q.toLowerCase()));
+  if(!filtered.length){ $panel.innerHTML = '<div class="combo-empty">Tidak ada GPU cocok</div>'; return; }
+  $panel.innerHTML = filtered.map(gi=>{
+    const g = gpus[gi];
+    return '<div class="combo-opt'+(gi===baselineIdx?' sel':'')+'" data-gi="'+gi+'" role="option">'+
+             '<span class="cdot" style="background:'+VCOLOR[g.vendor]+'"></span>'+
+             '<span class="cname">'+highlightMatch(g.name,q)+'</span>'+
+             '<span class="cval">'+g.val+'</span>'+
+           '</div>';
+  }).join("");
+}
+
+function markHl(){
+  $panel.querySelectorAll(".combo-opt").forEach(el=>el.classList.remove("hl"));
+  if(hlIdx>=0){
+    const el = $panel.children[hlIdx];
+    if(el && el.classList.contains("combo-opt")){ el.classList.add("hl"); el.scrollIntoView({block:"nearest"}); }
+  }
+}
+
+function openPanel(){ $combo.classList.add("open"); $panel.hidden=false; $input.setAttribute("aria-expanded","true"); }
+function closePanel(){ $combo.classList.remove("open"); $panel.hidden=true; $input.setAttribute("aria-expanded","false"); hlIdx=-1; }
+function restoreInput(){ $input.value = gpus[baselineIdx].name; }
+
+// open showing `q`; highlight current baseline if visible, else first
+function openWith(q){
+  buildPanel(q);
+  hlIdx = filtered.indexOf(baselineIdx);
+  if(hlIdx<0) hlIdx = filtered.length ? 0 : -1;
+  markHl();
+  openPanel();
+}
+
+function chooseBaseline(gi){
+  baselineIdx = gi;
+  restoreInput();
+  closePanel();
+  render();
+}
+
+$input.addEventListener("focus", ()=>{ $input.select(); openWith(""); });
+$input.addEventListener("click", ()=>{ if($panel.hidden) openWith(""); });
+$input.addEventListener("input", ()=>{
+  buildPanel($input.value.trim());
+  hlIdx = filtered.length ? 0 : -1;
+  markHl(); openPanel();
+});
+$input.addEventListener("blur", ()=>{ restoreInput(); closePanel(); }); // option clicks use mousedown+preventDefault, so focus stays
+$input.addEventListener("keydown",(e)=>{
+  if($panel.hidden && (e.key==="ArrowDown"||e.key==="ArrowUp")){ openWith($input.value.trim()); e.preventDefault(); return; }
+  if(e.key==="ArrowDown"){ if(filtered.length){ hlIdx=(hlIdx+1)%filtered.length; markHl(); } e.preventDefault(); }
+  else if(e.key==="ArrowUp"){ if(filtered.length){ hlIdx=(hlIdx-1+filtered.length)%filtered.length; markHl(); } e.preventDefault(); }
+  else if(e.key==="Enter"){ if(hlIdx>=0 && filtered[hlIdx]!=null) chooseBaseline(filtered[hlIdx]); e.preventDefault(); }
+  else if(e.key==="Escape"){ restoreInput(); closePanel(); }
+});
+// mousedown (not click) so preventDefault keeps input focused and blur doesn't fire first
+$panel.addEventListener("mousedown",(e)=>{
+  const opt = e.target.closest(".combo-opt");
+  if(opt){ e.preventDefault(); chooseBaseline(+opt.dataset.gi); }
+});
+
+restoreInput(); // seed input with default baseline name
+
+// ---------- filter state + elemen ----------
+let vendorFilter = "all";
+const $vendorSeg = document.getElementById("vendorSeg");
+const $minPct = document.getElementById("minPct");
+const $maxPct = document.getElementById("maxPct");
+const $count  = document.getElementById("count");
+
+// TPU tak punya URL tanpa id .cNNNN; pakai DuckDuckGo !ducky (I'm-feeling-lucky) → lompat ke halaman TPU.
+// Alternatif Google search dipertimbangkan tapi butuh 2 klik (mendarat di SERP, bukan halaman GPU).
+function tpuUrl(name){
+  return 'https://duckduckgo.com/?q=%21ducky+' + encodeURIComponent(name + ' site:techpowerup.com/gpu-specs');
+}
+
+function render(){
+  const base = gpus[baselineIdx];
+  const q = $search.value.trim().toLowerCase();
+  const minV = $minPct.value.trim()==="" ? -Infinity : +$minPct.value;
+  const maxV = $maxPct.value.trim()==="" ?  Infinity : +$maxPct.value;
+  $bName.textContent = base.name;
+
+  // pass 1: filter (nama + vendor + rentang %); simpan idx asli untuk ranking global
+  const rows = [];
+  gpus.forEach((g,idx)=>{
+    if(q && !g.name.toLowerCase().includes(q)) return;
+    if(vendorFilter!=="all" && g.vendor!==vendorFilter) return;
+    const pct = g.val / base.val * 100;
+    const pctR = Math.round(pct);
+    if(pctR < minV || pctR > maxV) return;              // filter pakai % yang ditampilkan
+    rows.push({g, idx, pct, pctR, mult:g.val/base.val});
+  });
+
+  $count.textContent = rows.length + " GPU";
+
+  if(rows.length===0){
+    $list.innerHTML = '<div class="empty">Tidak ada GPU cocok dengan filter saat ini.</div>';
+    return;
+  }
+
+  // skala bar relatif ke GPU tercepat dalam hasil terfilter (biar bar terisi enak dilihat)
+  const maxPct = Math.max(...rows.map(r=>r.pct));
+
+  $list.innerHTML = rows.map(r=>{
+    const g = r.g;
+    const barW = Math.max(r.pct / maxPct * 100, 0.6);
+    return '<a class="row'+(g===base?' active':'')+'" href="'+tpuUrl(g.name)+'" target="_blank" rel="noopener" title="Buka '+g.name+' di TechPowerUp">'+
+             '<div class="rank">'+(r.idx+1)+'</div>'+
+             '<div class="name">'+g.name+'<span class="vtag">'+VLABEL[g.vendor]+'</span></div>'+
+             '<div class="bar"><span style="width:'+barW.toFixed(2)+'%;background:'+VCOLOR[g.vendor]+'"></span></div>'+
+             '<div class="r-pct">'+r.pctR+'%</div>'+
+             '<div class="r-mult">'+r.mult.toFixed(2)+'×</div>'+
+           '</a>';
+  }).join("");
+}
+
+// ---------- listener filter ----------
+$vendorSeg.addEventListener("click",(e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  vendorFilter = b.dataset.v;
+  $vendorSeg.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  render();
+});
+$minPct.addEventListener("input", render);
+$maxPct.addEventListener("input", render);
+document.getElementById("resetFilters").addEventListener("click",()=>{
+  $search.value=""; $minPct.value=""; $maxPct.value=""; vendorFilter="all";
+  $vendorSeg.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x.dataset.v==="all"));
+  render();
+});
+
+$search.addEventListener("input", render);
+render();
+</script>
+</body>
+</html>

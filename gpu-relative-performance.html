@@ -348,6 +348,37 @@ function tpuUrl(name){
   return 'https://duckduckgo.com/?q=%21ducky+' + encodeURIComponent(name + ' site:techpowerup.com/gpu-specs');
 }
 
+// ---------- sinkron state <-> query param ----------
+// Hanya param non-default yang ditulis, biar URL bersih. baseline pakai NAMA (bukan index)
+// supaya tetap valid kalau urutan/DATA berubah.
+const DEFAULT_BASELINE = "GeForce GTX 1660 SUPER";
+function syncUrl(){
+  const p = new URLSearchParams();
+  if(gpus[baselineIdx].name !== DEFAULT_BASELINE) p.set("b", gpus[baselineIdx].name);
+  if($search.value.trim()) p.set("q", $search.value.trim());
+  if(vendorFilter !== "all") p.set("v", vendorFilter);
+  if($minPct.value.trim() !== "") p.set("min", $minPct.value.trim());
+  if($maxPct.value.trim() !== "") p.set("max", $maxPct.value.trim());
+  try{
+    const url = new URL(location.href);
+    url.search = p.toString();
+    history.replaceState(null, "", url);   // file:// bisa blokir → di-catch, persistensi jalan saat via http
+  }catch(_){}
+}
+function initFromUrl(){
+  const p = new URLSearchParams(location.search);
+  const b = p.get("b");
+  if(b){ const i = gpus.findIndex(g=>g.name===b); if(i>=0) baselineIdx = i; }
+  if(p.get("q")) $search.value = p.get("q");
+  const v = p.get("v");
+  if(v && ["nvidia","amd","intel","other"].includes(v)){
+    vendorFilter = v;
+    $vendorSeg.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x.dataset.v===v));
+  }
+  if(p.get("min")!==null) $minPct.value = p.get("min");
+  if(p.get("max")!==null) $maxPct.value = p.get("max");
+}
+
 function render(){
   const base = gpus[baselineIdx];
   const q = $search.value.trim().toLowerCase();
@@ -370,6 +401,7 @@ function render(){
 
   if(rows.length===0){
     $list.innerHTML = '<div class="empty">Tidak ada GPU cocok dengan filter saat ini.</div>';
+    syncUrl();
     return;
   }
 
@@ -387,6 +419,8 @@ function render(){
              '<div class="r-mult">'+r.mult.toFixed(2)+'×</div>'+
            '</a>';
   }).join("");
+
+  syncUrl();
 }
 
 // ---------- listener filter ----------
@@ -405,6 +439,9 @@ document.getElementById("resetFilters").addEventListener("click",()=>{
 });
 
 $search.addEventListener("input", render);
+
+initFromUrl();    // baca filter dari ?query
+restoreInput();   // seed input combobox sesuai baseline (mungkin dari URL)
 render();
 </script>
 </body>

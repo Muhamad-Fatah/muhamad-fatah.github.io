@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muhamad Fatah — Tools</title>
+<style>
+  /* token disamakan dengan gpu-relative-performance.html biar satu situs konsisten */
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e8ec; --muted:#9aa3b2;
+    --accent:#f5a623;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:32px 16px 60px}
+  h1{font-size:24px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+
+  .controls{
+    display:flex;gap:12px;flex-wrap:wrap;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;margin-bottom:18px;
+  }
+  input[type=search]{
+    flex:1 1 220px;min-width:0;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:9px 11px;font-size:14px;outline:none;
+  }
+  input:focus{border-color:var(--accent)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:5px 12px;font-size:12px;cursor:pointer}
+  .chip:hover{color:var(--text)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#161616;font-weight:600}
+  .count{margin-left:auto;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .card{
+    display:flex;flex-direction:column;gap:8px;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px;text-decoration:none;color:inherit;
+    transition:border-color .15s,transform .15s;
+  }
+  .card:hover,.card:focus-visible{border-color:var(--accent);transform:translateY(-2px);outline:none}
+  .card:hover .title{color:var(--accent)}
+  .title{font-weight:600;font-size:16px}
+  .desc{color:var(--muted);font-size:13px;flex:1 1 auto}
+  .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px}
+  .tag{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:6px;padding:1px 7px;text-transform:uppercase;letter-spacing:.04em}
+  .date{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+  .empty{padding:30px;text-align:center;color:var(--muted);grid-column:1/-1}
+  footer{margin-top:28px;color:var(--muted);font-size:12px;text-align:center}
+  @media (max-width:560px){
+    .count{margin-left:0;width:100%}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tools &amp; Research</h1>
+  <p class="sub">Kumpulan halaman kecil buat riset dan perbandingan. Pilih salah satu di bawah.</p>
+
+  <div class="controls">
+    <input type="search" id="search" placeholder="Cari halaman…" autocomplete="off" aria-label="Cari halaman">
+    <div class="chips" id="chips"></div>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <footer>muhamad-fatah.github.io</footer>
+</div>
+
+<script>
+// ===== REGISTRY: satu-satunya tempat yang perlu diedit saat nambah halaman baru =====
+// Sengaja array manual (bukan auto-list via GitHub API / pages.json):
+// - GitHub API kena rate limit 60 req/jam per IP & gak ada deskripsi/tag
+// - fetch pages.json gagal kalau dibuka via file:// (harus lewat server)
+// `file` case-sensitive di GitHub Pages — harus persis sama dengan nama file.
+const PAGES = [
+  { file: "gpu-relative-performance.html", title: "GPU Relative Performance",
+    desc: "Bandingkan performa GPU relatif ke baseline pilihan (data TechPowerUp).",
+    tags: ["hardware","gpu"], updated: "2026-07-23" },
+];
+
+const $search = document.getElementById("search");
+const $chips  = document.getElementById("chips");
+const $grid   = document.getElementById("grid");
+const $count  = document.getElementById("count");
+
+// urutan: terbaru di atas; yang tanpa `updated` di bawah
+const pages = PAGES.slice().sort((a,b)=>(b.updated||"").localeCompare(a.updated||""));
+const allTags = [...new Set(pages.flatMap(p=>p.tags||[]))].sort();
+let tagFilter = "all";
+
+// helper bikin elemen; pakai textContent (bukan innerHTML) biar judul/desc dengan &<> aman
+function el(tag, cls, text){
+  const e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(text != null) e.textContent = text;
+  return e;
+}
+
+function renderChips(){
+  $chips.replaceChildren();
+  // chip tag cuma berguna kalau ada >1 tag
+  if(allTags.length < 2) return;
+  ["all", ...allTags].forEach(t=>{
+    const b = el("button", "chip"+(t===tagFilter?" on":""), t==="all"?"Semua":t);
+    b.type = "button";
+    b.dataset.t = t;
+    $chips.append(b);
+  });
+}
+
+function render(){
+  const q = $search.value.trim().toLowerCase();
+  const rows = pages.filter(p=>{
+    if(tagFilter!=="all" && !(p.tags||[]).includes(tagFilter)) return false;
+    if(!q) return true;
+    return [p.title, p.desc||"", ...(p.tags||[])].join(" ").toLowerCase().includes(q);
+  });
+
+  $count.textContent = rows.length + " halaman";
+  $grid.replaceChildren();
+  if(!rows.length){
+    $grid.append(el("div", "empty", "Tidak ada halaman cocok."));
+    return;
+  }
+  rows.forEach(p=>{
+    const a = el("a", "card");
+    a.href = p.file;
+    a.append(el("div", "title", p.title));
+    if(p.desc) a.append(el("div", "desc", p.desc));
+    const meta = el("div", "meta");
+    (p.tags||[]).forEach(t=>meta.append(el("span", "tag", t)));
+    if(p.updated) meta.append(el("span", "date", p.updated));
+    a.append(meta);
+    $grid.append(a);
+  });
+}
+
+$chips.addEventListener("click",(e)=>{
+  const b = e.target.closest(".chip"); if(!b) return;
+  tagFilter = b.dataset.t;
+  renderChips();
+  render();
+});
+$search.addEventListener("input", render);
+
+renderChips();
+render();
+</script>
+</body>
+</html>

@@ -104,6 +104,8 @@
   .row.active .r-pct{color:var(--accent)}
   .empty{padding:30px;text-align:center;color:var(--muted)}
   footer{margin-top:22px;color:var(--muted);font-size:12px;text-align:center}
+  .home{display:inline-block;color:var(--muted);font-size:13px;text-decoration:none;margin-bottom:10px}
+  .home:hover{color:var(--accent)}
   @media (max-width:560px){
     .head,.row{grid-template-columns:26px minmax(90px,1.4fr) minmax(60px,2fr) 52px 50px;gap:6px;font-size:13px}
     select,input[type=text]{min-width:150px}
@@ -113,6 +115,8 @@
 </head>
 <body>
 <div class="wrap">
+  <!-- index.html (bukan "./") biar jalan juga saat dibuka via file:// -->
+  <a class="home" href="index.html">&larr; Semua halaman</a>
   <h1>GPU Relative Performance</h1>
   <p class="sub">Data indeks TechPowerUp. Pilih GPU sebagai baseline (=100%) &mdash; semua kartu lain dihitung ulang relatif ke pilihanmu.</p>
 
